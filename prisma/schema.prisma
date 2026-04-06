@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum CompanyTier {
+  default
+  basic
+  pro
+}
+
+enum QuestionnaireStatus {
+  draft
+  published
+  locked
+  archived
+}
+
+enum AccessType {
+  public
+  email_only
+}
+
+enum ResultsMode {
+  full
+  score_only
+}
+
+enum SubmissionStatus {
+  in_progress
+  submitted
+  expired
+  blocked
+}
+
+model Company {
+  id        String      @id @default(uuid()) @db.Uuid
+  name      String
+  tier      CompanyTier @default(default)
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  adminUsers     AdminUser[]
+  questionnaires Questionnaire[]
+
+  @@map("companies")
+}
+
+model AdminUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  company              Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdQuestionnaires Questionnaire[] @relation("CreatedBy")
+
+  @@map("admin_users")
+}
+
+model Questionnaire {
+  id                     String                @id @default(uuid()) @db.Uuid
+  companyId              String                @map("company_id") @db.Uuid
+  title                  String
+  publicToken            String                @unique @map("public_token")
+  status                 QuestionnaireStatus   @default(draft)
+  accessType             AccessType            @default(public) @map("access_type")
+  resultsMode            ResultsMode           @default(full) @map("results_mode")
+  isAllowedEmailsEnabled Boolean               @default(true) @map("is_allowed_emails_enabled")
+  defaultLocale          String                @default("en") @map("default_locale")
+  questionsPerPage       Int?                  @map("questions_per_page")
+  timeLimitSeconds       Int?                  @map("time_limit_seconds")
+  allowMultipleCorrect   Boolean               @default(false) @map("allow_multiple_correct")
+  lockedAt               DateTime?             @map("locked_at")
+  createdById            String?               @map("created_by") @db.Uuid
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+
+  company       Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy     AdminUser?                  @relation("CreatedBy", fields: [createdById], references: [id])
+  questions     Question[]
+  allowedEmails QuestionnaireAllowedEmail[]
+  submissions   Submission[]
+
+  @@index([companyId])
+  @@index([status])
+  @@map("questionnaires")
+}
+
+model QuestionnaireAllowedEmail {
+  id               String   @id @default(uuid()) @db.Uuid
+  questionnaireId  String   @map("questionnaire_id") @db.Uuid
+  emailNormalized  String   @map("email_normalized")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  questionnaire Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+
+  @@unique([questionnaireId, emailNormalized])
+  @@map("questionnaire_allowed_emails")
+}
+
+model Question {
+  id              String   @id @default(uuid()) @db.Uuid
+  questionnaireId String   @map("questionnaire_id") @db.Uuid
+  position        Int
+  enabled         Boolean  @default(true)
+  allowMultiple   Boolean  @default(false) @map("allow_multiple")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  questionnaire Questionnaire       @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  translations  QuestionTranslation[]
+  answerOptions AnswerOption[]
+  submissionAnswers SubmissionAnswer[]
+
+  @@unique([questionnaireId, position])
+  @@map("questions")
+}
+
+model QuestionTranslation {
+  id         String @id @default(uuid()) @db.Uuid
+  questionId String @map("question_id") @db.Uuid
+  locale     String
+  title      String
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, locale])
+  @@map("question_translations")
+}
+
+model AnswerOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  position   Int
+  isCorrect  Boolean  @default(false) @map("is_correct")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  question          Question                  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  translations      AnswerOptionTranslation[]
+  submissionAnswers SubmissionAnswer[]
+
+  @@unique([questionId, position])
+  @@map("answer_options")
+}
+
+model AnswerOptionTranslation {
+  id             String @id @default(uuid()) @db.Uuid
+  answerOptionId String @map("answer_option_id") @db.Uuid
+  locale         String
+  label          String
+
+  answerOption AnswerOption @relation(fields: [answerOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([answerOptionId, locale])
+  @@map("answer_option_translations")
+}
+
+model Submission {
+  id                         String            @id @default(uuid()) @db.Uuid
+  questionnaireId            String            @map("questionnaire_id") @db.Uuid
+  participantEmailNormalized String            @map("participant_email_normalized")
+  status                     SubmissionStatus  @default(in_progress)
+  startedAt                  DateTime          @default(now()) @map("started_at")
+  submittedAt                DateTime?         @map("submitted_at")
+  score                      Float?
+  createdAt                  DateTime          @default(now()) @map("created_at")
+
+  questionnaire Questionnaire    @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  answers       SubmissionAnswer[]
+
+  @@unique([questionnaireId, participantEmailNormalized])
+  @@index([questionnaireId])
+  @@index([participantEmailNormalized])
+  @@index([status])
+  @@map("submissions")
+}
+
+model SubmissionAnswer {
+  id                String   @id @default(uuid()) @db.Uuid
+  submissionId      String   @map("submission_id") @db.Uuid
+  questionId        String   @map("question_id") @db.Uuid
+  answerOptionId    String   @map("answer_option_id") @db.Uuid
+  isCorrectSnapshot Boolean  @map("is_correct_snapshot")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  submission   Submission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question     Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answerOption AnswerOption @relation(fields: [answerOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, questionId, answerOptionId])
+  @@index([submissionId])
+  @@index([questionId])
+  @@map("submission_answers")
+}
