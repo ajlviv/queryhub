@@ -23,7 +23,9 @@ export async function GET() {
     orderBy: { updatedAt: "desc" },
     take: 100,
     include: {
-      _count: { select: { questions: true, submissions: true } },
+      questions: { where: { enabled: true } },
+      _count: { select: { submissions: true } },
+      company: { select: { tier: true } },
     },
   });
 
@@ -34,8 +36,9 @@ export async function GET() {
       publicToken: q.publicToken,
       status: q.status,
       lockedAt: q.lockedAt,
-      questionCount: q._count.questions,
+      questionCount: q.questions.length,
       submissionCount: q._count.submissions,
+      tier: q.company.tier,
       updatedAt: q.updatedAt,
     })),
   });

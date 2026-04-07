@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useToast } from "@/components/toast";
 
 type QDetail = {
   id: string;
@@ -55,13 +56,13 @@ export default function QuestionnaireEditPage() {
   const [error, setError] = useState<string | null>(null);
   const [rawText, setRawText] = useState("");
   const [allowedText, setAllowedText] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [questionEditors, setQuestionEditors] = useState<Record<string, QuestionEditorState>>(
     {},
   );
   const [newTitle, setNewTitle] = useState("");
   const [newOptionsText, setNewOptionsText] = useState("");
+  const { showToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +130,6 @@ export default function QuestionnaireEditPage() {
     e.preventDefault();
     if (!data) return;
     setBusy(true);
-    setMsg(null);
     const form = new FormData(e.currentTarget);
     const emails = (form.get("allowedEmails") as string)
       .split(/[,;\n]/)
@@ -159,16 +159,15 @@ export default function QuestionnaireEditPage() {
     const j = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(j.error ?? "Save failed");
+      showToast(j.error ?? "Save failed", "error");
       return;
     }
-    setMsg("Saved.");
+    showToast("Saved.", "success");
     await reloadQuestionnaire();
   }
 
   async function importRaw() {
     setBusy(true);
-    setMsg(null);
     const res = await fetch(`/api/admin/questionnaires/${id}/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -178,17 +177,16 @@ export default function QuestionnaireEditPage() {
     const j = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(j.error ?? "Import failed");
+      showToast(j.error ?? "Import failed", "error");
       return;
     }
-    setMsg("Imported.");
+    showToast("Imported.", "success");
     setRawText("");
     await reloadQuestionnaire();
   }
 
   async function publish() {
     setBusy(true);
-    setMsg(null);
     const res = await fetch(`/api/admin/questionnaires/${id}/publish`, {
       method: "POST",
       credentials: "include",
@@ -196,10 +194,10 @@ export default function QuestionnaireEditPage() {
     const j = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(j.error ?? "Publish failed");
+      showToast(j.error ?? "Publish failed", "error");
       return;
     }
-    setMsg("Published.");
+    showToast("Published.", "success");
     await reloadQuestionnaire();
   }
 
@@ -213,7 +211,7 @@ export default function QuestionnaireEditPage() {
     setBusy(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setMsg(j.error ?? "Archive failed");
+      showToast(j.error ?? "Archive failed", "error");
       return;
     }
     router.push("/admin/questionnaires");
@@ -221,16 +219,15 @@ export default function QuestionnaireEditPage() {
 
   async function addQuestion() {
     if (!newTitle.trim()) {
-      setMsg("Question title is required");
+      showToast("Question title is required", "error");
       return;
     }
     const options = parseOptionsText(newOptionsText);
     if (options.length < 2) {
-      setMsg("Add at least 2 options");
+      showToast("Add at least 2 options", "error");
       return;
     }
     setBusy(true);
-    setMsg(null);
     const res = await fetch(`/api/admin/questionnaires/${id}/questions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -245,10 +242,10 @@ export default function QuestionnaireEditPage() {
     const j = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(j.error ?? "Failed to add question");
+      showToast(j.error ?? "Failed to add question", "error");
       return;
     }
-    setMsg("Question added.");
+    showToast("Question added.", "success");
     setNewTitle("");
     setNewOptionsText("");
     await reloadQuestionnaire();
@@ -259,11 +256,10 @@ export default function QuestionnaireEditPage() {
     if (!editor) return;
     const options = parseOptionsText(editor.optionsText);
     if (options.length < 2) {
-      setMsg("Each question needs at least 2 options");
+      showToast("Each question needs at least 2 options", "error");
       return;
     }
     setBusy(true);
-    setMsg(null);
     const res = await fetch(`/api/admin/questionnaires/${id}/questions/${questionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -278,10 +274,10 @@ export default function QuestionnaireEditPage() {
     const j = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(j.error ?? "Failed to save question");
+      showToast(j.error ?? "Failed to save question", "error");
       return;
     }
-    setMsg("Question saved.");
+    showToast("Question saved.", "success");
     await reloadQuestionnaire();
   }
 
@@ -316,7 +312,7 @@ export default function QuestionnaireEditPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={`/q/${data.publicToken}`}
+            href={`/q/${data.publicToken}?preview=1`}
             target="_blank"
             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
             rel="noreferrer"
@@ -343,10 +339,6 @@ export default function QuestionnaireEditPage() {
           </button>
         </div>
       </div>
-
-      {msg && (
-        <p className="rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-800">{msg}</p>
-      )}
 
       <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-medium text-zinc-900">Settings</h2>
