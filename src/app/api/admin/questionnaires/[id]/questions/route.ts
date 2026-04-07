@@ -72,8 +72,8 @@ export async function POST(
         enabled: parsed.data.enabled ?? true,
         allowMultiple:
           parsed.data.allowMultiple ??
-          correctCount > 1 ||
-          questionnaire.allowMultipleCorrect,
+          (correctCount > 1 ||
+          questionnaire.allowMultipleCorrect),
         translations: {
           create: {
             locale: questionnaire.defaultLocale,
