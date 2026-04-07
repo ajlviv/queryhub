@@ -26,6 +26,28 @@ type QDetail = {
   }[];
 };
 
+type QuestionEditorState = {
+  title: string;
+  optionsText: string;
+  enabled: boolean;
+  allowMultiple: boolean;
+};
+
+function toOptionsText(options: { label: string; isCorrect: boolean }[]) {
+  return options.map((o) => `${o.isCorrect ? "* " : ""}${o.label}`).join("\n");
+}
+
+function parseOptionsText(text: string) {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => ({
+      label: line.startsWith("*") ? line.slice(1).trim() : line,
+      isCorrect: line.startsWith("*"),
+    }));
+}
+
 export default function QuestionnaireEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -35,6 +57,11 @@ export default function QuestionnaireEditPage() {
   const [allowedText, setAllowedText] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [questionEditors, setQuestionEditors] = useState<Record<string, QuestionEditorState>>(
+    {},
+  );
+  const [newTitle, setNewTitle] = useState("");
+  const [newOptionsText, setNewOptionsText] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -54,12 +81,49 @@ export default function QuestionnaireEditPage() {
       }
       setData(j);
       setAllowedText((j.allowedEmails as string[]).join(", "));
+      setQuestionEditors(
+        Object.fromEntries(
+          (j.questions as QDetail["questions"]).map((qu) => [
+            qu.id,
+            {
+              title: qu.title,
+              optionsText: toOptionsText(qu.options),
+              enabled: qu.enabled,
+              allowMultiple: qu.allowMultiple,
+            },
+          ]),
+        ),
+      );
       setError(null);
     })();
     return () => {
       cancelled = true;
     };
   }, [id, router]);
+
+  async function reloadQuestionnaire() {
+    const r = await fetch(`/api/admin/questionnaires/${id}`, {
+      credentials: "include",
+    });
+    const jj = await r.json().catch(() => ({}));
+    if (r.ok) {
+      setData(jj);
+      setAllowedText((jj.allowedEmails as string[]).join(", "));
+      setQuestionEditors(
+        Object.fromEntries(
+          (jj.questions as QDetail["questions"]).map((qu) => [
+            qu.id,
+            {
+              title: qu.title,
+              optionsText: toOptionsText(qu.options),
+              enabled: qu.enabled,
+              allowMultiple: qu.allowMultiple,
+            },
+          ]),
+        ),
+      );
+    }
+  }
 
   async function saveSettings(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -99,14 +163,7 @@ export default function QuestionnaireEditPage() {
       return;
     }
     setMsg("Saved.");
-    const r = await fetch(`/api/admin/questionnaires/${id}`, {
-      credentials: "include",
-    });
-    const jj = await r.json().catch(() => ({}));
-    if (r.ok) {
-      setData(jj);
-      setAllowedText((jj.allowedEmails as string[]).join(", "));
-    }
+    await reloadQuestionnaire();
   }
 
   async function importRaw() {
@@ -126,11 +183,7 @@ export default function QuestionnaireEditPage() {
     }
     setMsg("Imported.");
     setRawText("");
-    const r = await fetch(`/api/admin/questionnaires/${id}`, {
-      credentials: "include",
-    });
-    const jj = await r.json().catch(() => ({}));
-    if (r.ok) setData(jj);
+    await reloadQuestionnaire();
   }
 
   async function publish() {
@@ -147,11 +200,7 @@ export default function QuestionnaireEditPage() {
       return;
     }
     setMsg("Published.");
-    const r = await fetch(`/api/admin/questionnaires/${id}`, {
-      credentials: "include",
-    });
-    const jj = await r.json().catch(() => ({}));
-    if (r.ok) setData(jj);
+    await reloadQuestionnaire();
   }
 
   async function archive() {
@@ -168,6 +217,72 @@ export default function QuestionnaireEditPage() {
       return;
     }
     router.push("/admin/questionnaires");
+  }
+
+  async function addQuestion() {
+    if (!newTitle.trim()) {
+      setMsg("Question title is required");
+      return;
+    }
+    const options = parseOptionsText(newOptionsText);
+    if (options.length < 2) {
+      setMsg("Add at least 2 options");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/admin/questionnaires/${id}/questions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        title: newTitle,
+        options,
+        allowMultiple: false,
+        enabled: true,
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMsg(j.error ?? "Failed to add question");
+      return;
+    }
+    setMsg("Question added.");
+    setNewTitle("");
+    setNewOptionsText("");
+    await reloadQuestionnaire();
+  }
+
+  async function saveQuestion(questionId: string) {
+    const editor = questionEditors[questionId];
+    if (!editor) return;
+    const options = parseOptionsText(editor.optionsText);
+    if (options.length < 2) {
+      setMsg("Each question needs at least 2 options");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/admin/questionnaires/${id}/questions/${questionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        title: editor.title,
+        enabled: editor.enabled,
+        allowMultiple: editor.allowMultiple,
+        options,
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMsg(j.error ?? "Failed to save question");
+      return;
+    }
+    setMsg("Question saved.");
+    await reloadQuestionnaire();
   }
 
   if (error && !data) {
@@ -366,21 +481,143 @@ export default function QuestionnaireEditPage() {
             View submissions →
           </Link>
         </div>
+        <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-4">
+          <h3 className="text-sm font-medium text-zinc-900">Add question manually</h3>
+          <label className="mt-3 block space-y-1">
+            <span className="text-xs text-zinc-600">Question title</span>
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              disabled={busy || locked}
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:bg-zinc-100"
+              placeholder="Enter the question"
+            />
+          </label>
+          <label className="mt-3 block space-y-1">
+            <span className="text-xs text-zinc-600">Options (one per line, prefix correct with *)</span>
+            <textarea
+              value={newOptionsText}
+              onChange={(e) => setNewOptionsText(e.target.value)}
+              disabled={busy || locked}
+              rows={5}
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm disabled:bg-zinc-100"
+              placeholder={"Paris\n* Berlin\nMadrid"}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy || locked}
+            onClick={() => addQuestion()}
+            className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            Add question
+          </button>
+        </div>
         <ul className="mt-4 space-y-4">
           {data.questions.length === 0 && (
             <li className="text-sm text-zinc-500">No questions yet — import or publish after adding.</li>
           )}
           {data.questions.map((qu) => (
             <li key={qu.id} className="rounded-lg border border-zinc-100 bg-zinc-50 p-4">
-              <p className="font-medium text-zinc-900">{qu.title}</p>
-              <ul className="mt-2 list-inside list-disc text-sm text-zinc-700">
-                {qu.options.map((o) => (
-                  <li key={o.id}>
-                    {o.label}
-                    {o.isCorrect ? " ✓" : ""}
-                  </li>
-                ))}
-              </ul>
+              <label className="block space-y-1">
+                <span className="text-xs text-zinc-600">Question title</span>
+                <input
+                  value={questionEditors[qu.id]?.title ?? qu.title}
+                  onChange={(e) =>
+                    setQuestionEditors((prev) => ({
+                      ...prev,
+                      [qu.id]: {
+                        ...(prev[qu.id] ?? {
+                          title: qu.title,
+                          optionsText: toOptionsText(qu.options),
+                          enabled: qu.enabled,
+                          allowMultiple: qu.allowMultiple,
+                        }),
+                        title: e.target.value,
+                      },
+                    }))
+                  }
+                  disabled={busy || locked}
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100"
+                />
+              </label>
+              <label className="mt-3 block space-y-1">
+                <span className="text-xs text-zinc-600">Options (one per line, * = correct)</span>
+                <textarea
+                  value={questionEditors[qu.id]?.optionsText ?? toOptionsText(qu.options)}
+                  onChange={(e) =>
+                    setQuestionEditors((prev) => ({
+                      ...prev,
+                      [qu.id]: {
+                        ...(prev[qu.id] ?? {
+                          title: qu.title,
+                          optionsText: toOptionsText(qu.options),
+                          enabled: qu.enabled,
+                          allowMultiple: qu.allowMultiple,
+                        }),
+                        optionsText: e.target.value,
+                      },
+                    }))
+                  }
+                  disabled={busy || locked}
+                  rows={5}
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm disabled:bg-zinc-100"
+                />
+              </label>
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={questionEditors[qu.id]?.enabled ?? qu.enabled}
+                    onChange={(e) =>
+                      setQuestionEditors((prev) => ({
+                        ...prev,
+                        [qu.id]: {
+                          ...(prev[qu.id] ?? {
+                            title: qu.title,
+                            optionsText: toOptionsText(qu.options),
+                            enabled: qu.enabled,
+                            allowMultiple: qu.allowMultiple,
+                          }),
+                          enabled: e.target.checked,
+                        },
+                      }))
+                    }
+                    disabled={busy || locked}
+                  />
+                  Enabled
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={questionEditors[qu.id]?.allowMultiple ?? qu.allowMultiple}
+                    onChange={(e) =>
+                      setQuestionEditors((prev) => ({
+                        ...prev,
+                        [qu.id]: {
+                          ...(prev[qu.id] ?? {
+                            title: qu.title,
+                            optionsText: toOptionsText(qu.options),
+                            enabled: qu.enabled,
+                            allowMultiple: qu.allowMultiple,
+                          }),
+                          allowMultiple: e.target.checked,
+                        },
+                      }))
+                    }
+                    disabled={busy || locked}
+                  />
+                  Allow multiple selections
+                </label>
+                <button
+                  type="button"
+                  disabled={busy || locked}
+                  onClick={() => saveQuestion(qu.id)}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  Save question
+                </button>
+              </div>
             </li>
           ))}
         </ul>
