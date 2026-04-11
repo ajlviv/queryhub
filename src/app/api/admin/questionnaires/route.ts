@@ -14,22 +14,34 @@ const createSchema = z.object({
   title: z.string().min(1).max(500),
 });
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getAdminSession();
   if (!session) return jsonError("Unauthorized", 401);
 
-  const list = await prisma.questionnaire.findMany({
-    where: { companyId: session.companyId },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-    include: {
-      questions: { where: { enabled: true } },
-      _count: { select: { submissions: true } },
-      company: { select: { tier: true } },
-    },
-  });
+  const url = new URL(req.url);
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
+  const pageSize = Math.min(50, Math.max(5, Number(url.searchParams.get("pageSize") ?? "10")));
+  const skip = (page - 1) * pageSize;
+
+  const [total, list] = await Promise.all([
+    prisma.questionnaire.count({ where: { companyId: session.companyId } }),
+    prisma.questionnaire.findMany({
+      where: { companyId: session.companyId },
+      orderBy: { updatedAt: "desc" },
+      skip,
+      take: pageSize,
+      include: {
+        questions: { where: { enabled: true } },
+        _count: { select: { submissions: true } },
+        company: { select: { tier: true } },
+      },
+    }),
+  ]);
 
   return jsonOk({
+    page,
+    pageSize,
+    total,
     items: list.map((q) => ({
       id: q.id,
       title: q.title,
