@@ -67,12 +67,13 @@ const publicInclude = {
 export async function getPublicQuestionnairePayload(
   publicToken: string,
   locale: string,
+  allowDraft = false,
 ) {
   const q = await prisma.questionnaire.findUnique({
     where: { publicToken },
     include: publicInclude,
   });
-  if (!q || q.status === "draft" || q.status === "archived") {
+  if (!q || q.status === "archived" || (q.status === "draft" && !allowDraft)) {
     throw new ServiceError(404, "Questionnaire not available");
   }
 

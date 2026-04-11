@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 
 type Question = {
   id: string;
@@ -37,11 +37,17 @@ export default function PublicQuestionnairePage() {
       correctLabels?: string[];
     }[];
   } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const searchParams = useSearchParams();
+  const previewMode = searchParams.get("preview") === "1";
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch(`/api/public/questionnaires/${token}`);
+      const search = previewMode ? "?preview=1" : "";
+      const res = await fetch(`/api/public/questionnaires/${token}${search}`);
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (!cancelled) setLoadError(j.error ?? "Not found");
@@ -52,7 +58,7 @@ export default function PublicQuestionnairePage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, previewMode]);
 
   const pageSize = payload?.questionsPerPage ?? payload?.questions.length ?? 1;
   const [pageIndex, setPageIndex] = useState(0);
@@ -70,24 +76,56 @@ export default function PublicQuestionnairePage() {
 
   async function start() {
     setSubmitError(null);
-    const res = await fetch(`/api/public/questionnaires/${token}/start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ email }),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setSubmitError(j.error ?? "Could not start");
-      return;
+    if (!previewMode) {
+      const res = await fetch(`/api/public/questionnaires/${token}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSubmitError(j.error ?? "Could not start");
+        return;
+      }
+      setPhase("quiz");
+      setPageIndex(0);
+      const init: Record<string, Set<string>> = {};
+      payload?.questions.forEach((q) => {
+        init[q.id] = new Set();
+      });
+      setAnswers(init);
+      const startAtMs = new Date(j.startedAt).getTime();
+      setStartedAt(startAtMs);
+      if (payload?.timeLimitSeconds != null) {
+        setTimeLeft(
+          Math.max(
+            0,
+            payload.timeLimitSeconds - Math.floor((Date.now() - startAtMs) / 1000),
+          ),
+        );
+      } else {
+        setTimeLeft(null);
+      }
+      setAutoSubmitted(false);
+    } else {
+      // Preview mode: skip API call
+      setPhase("quiz");
+      setPageIndex(0);
+      const init: Record<string, Set<string>> = {};
+      payload?.questions.forEach((q) => {
+        init[q.id] = new Set();
+      });
+      setAnswers(init);
+      const startAtMs = Date.now();
+      setStartedAt(startAtMs);
+      if (payload?.timeLimitSeconds != null) {
+        setTimeLeft(payload.timeLimitSeconds);
+      } else {
+        setTimeLeft(null);
+      }
+      setAutoSubmitted(false);
     }
-    setPhase("quiz");
-    setPageIndex(0);
-    const init: Record<string, Set<string>> = {};
-    payload?.questions.forEach((q) => {
-      init[q.id] = new Set();
-    });
-    setAnswers(init);
   }
 
   function toggleAnswer(qid: string, aid: string, allowMultiple: boolean) {
@@ -102,6 +140,24 @@ export default function PublicQuestionnairePage() {
       return next;
     });
   }
+
+  useEffect(() => {
+    if (!payload?.timeLimitSeconds || phase !== "quiz" || startedAt == null) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const remaining = Math.max(0, payload.timeLimitSeconds! - elapsed);
+      setTimeLeft(remaining);
+      if (remaining <= 0 && !autoSubmitted) {
+        setAutoSubmitted(true);
+        submit();
+      }
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [autoSubmitted, phase, payload?.timeLimitSeconds, startedAt, submit]);
 
   async function submit() {
     if (!payload) return;
@@ -210,7 +266,9 @@ export default function PublicQuestionnairePage() {
         <h1 className="text-xl font-semibold text-zinc-900">{payload.title}</h1>
         {payload.timeLimitSeconds != null && (
           <p className="text-sm text-zinc-500">
-            Time limit: {payload.timeLimitSeconds}s from start
+            {timeLeft != null
+              ? `Time remaining: ${timeLeft}s`
+              : `Time limit: ${payload.timeLimitSeconds}s from start`}
           </p>
         )}
       </div>

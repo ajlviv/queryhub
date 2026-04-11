@@ -16,6 +16,7 @@ export default function AdminRegisterPage() {
   const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [tier, setTier] = useState<Tier>(() => {
     if (typeof window === "undefined") return "default";
     return parseTier(new URLSearchParams(window.location.search).get("tier"));
@@ -28,6 +29,11 @@ export default function AdminRegisterPage() {
     setError(null);
     setLoading(true);
     try {
+      if (password !== confirmPassword) {
+        setError("Passwords do not match");
+        setLoading(false);
+        return;
+      }
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -78,6 +84,17 @@ export default function AdminRegisterPage() {
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm text-zinc-600">Confirm password</span>
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
             className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
           />
         </label>

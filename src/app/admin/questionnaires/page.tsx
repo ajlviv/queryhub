@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { maxQuestionnairesForTier } from "@/lib/tiers";
+import type { CompanyTier } from "@prisma/client";
 
 type Item = {
   id: string;
@@ -12,6 +14,7 @@ type Item = {
   lockedAt: string | null;
   questionCount: number;
   submissionCount: number;
+  tier: string;
 };
 
 export default function QuestionnairesListPage() {
@@ -58,7 +61,18 @@ export default function QuestionnairesListPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-zinc-900">Questionnaires</h1>
+        <h1 className="text-2xl font-semibold text-zinc-900">
+          Questionnaires
+          {items && items.length > 0 && (
+            <>
+              {" "}
+              {items[0].tier} (
+              {maxQuestionnairesForTier(items[0].tier as CompanyTier) -
+                items.filter((q) => q.status !== "archived").length}
+              /{maxQuestionnairesForTier(items[0].tier as CompanyTier)})
+            </>
+          )}
+        </h1>
         <div className="flex gap-2">
           <button
             type="button"

@@ -72,7 +72,7 @@ model Questionnaire {
   status                 QuestionnaireStatus   @default(draft)
   accessType             AccessType            @default(public) @map("access_type")
   resultsMode            ResultsMode           @default(full) @map("results_mode")
-  isAllowedEmailsEnabled Boolean               @default(true) @map("is_allowed_emails_enabled")
+  isAllowedEmailsEnabled Boolean               @default(false) @map("is_allowed_emails_enabled")
   defaultLocale          String                @default("en") @map("default_locale")
   questionsPerPage       Int?                  @map("questions_per_page")
   timeLimitSeconds       Int?                  @map("time_limit_seconds")

@@ -11,9 +11,10 @@ export async function GET(
   const { token } = await ctx.params;
   const url = new URL(req.url);
   const locale = url.searchParams.get("locale") ?? "en";
+  const preview = url.searchParams.get("preview") === "1";
 
   try {
-    const payload = await getPublicQuestionnairePayload(token, locale);
+    const payload = await getPublicQuestionnairePayload(token, locale, preview);
     return jsonOk(payload);
   } catch (e) {
     if (e instanceof ServiceError) {
